@@ -1,9 +1,10 @@
-import "dotenv/config";
+import { UnstructuredLoader } from "@langchain/community/document_loaders/fs/unstructured";
+import { OpenAIEmbeddings } from "@langchain/openai";
 import axios from "axios";
 import chalk from "chalk";
-import { OpenAIEmbeddings } from "@langchain/openai";
+import "dotenv/config";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { UnstructuredLoader } from "@langchain/community/document_loaders/fs/unstructured";
 import path from "path";
 
 const ASSETS_DIR = path.resolve("assets");
@@ -13,22 +14,9 @@ const markdownPath = path.join(
   "README.md",
 );
 
-const loader = new UnstructuredLoader(markdownPath, {
-  apiKey: process.env.UNSTRUCTURED_API_KEY,
-  apiUrl: process.env.UNSTRUCTURED_API_URL,
-});
+const data = await loadAndSplitMarkdown(markdownPath);
+const vectorstore = await vectorIngestion(data);
 
-const data = await loader.load();
-
-console.log(data);
-
-/*
-// Vector store ingestion
-const embeddingFunction = new OpenAIEmbeddings();
-
-const vectorstore = new MemoryVectorStore(embeddingFunction);
-
-// prompt
 const prompt = getPrompt([
   {
     role: "system",
@@ -42,23 +30,48 @@ know" if you do not know`,
   },
 ]);
 
-await vectorstore.addDocuments(data);
-
 // Vector store seasrch
 process.stdout.write("You: ");
 
 process.stdin.addListener("data", async (data) => {
   const question = data.toString().trim();
-  const context = await vectorstore.similaritySearch(`${question}`, 1);
+  const contextDocs = await vectorstore.similaritySearch(`${question}`, 16);
+  const context = contextDocs.map(({ pageContent }) => pageContent).join("\n");
+  // console.log(context);
 
-  const aiResponse = await prompt(`Use this context <context>${context}<context>
-to answer this question using the above context: ${question}`);
+  const aiResponse = await prompt(
+    `Use this context <context>${context}<context> to answer this question using the above context: ${question}`,
+  );
   console.log(chalk.magenta("AI: " + aiResponse.content));
   process.stdout.write("You: ");
 });
-*/
 
 //helpers
+
+async function loadAndSplitMarkdown(filepath) {
+  const loader = new UnstructuredLoader(filepath, {
+    apiKey: process.env.UNSTRUCTURED_API_KEY,
+    apiUrl: process.env.UNSTRUCTURED_API_URL,
+    chunkingStrategy: "by_title",
+  });
+
+  const README = await loader.load();
+
+  const splitter = new RecursiveCharacterTextSplitter({
+    chunkSize: 2048,
+    chunkOverlap: 512,
+  });
+
+  const data = await splitter.splitDocuments(README);
+  return data;
+}
+
+async function vectorIngestion(docs) {
+  const embeddingFunction = new OpenAIEmbeddings();
+  const vectorstore = new MemoryVectorStore(embeddingFunction);
+  await vectorstore.addDocuments(docs);
+  return vectorstore;
+}
 
 function getPrompt(thread = []) {
   return function (userPrompt, options = {}) {
@@ -76,7 +89,7 @@ function getPrompt(thread = []) {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       data: {
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         max_tokens: 500,
         temperature: 0,
         ...options,

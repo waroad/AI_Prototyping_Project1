@@ -8,11 +8,7 @@ import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import path from "path";
 
 const ASSETS_DIR = path.resolve("assets");
-const markdownPath = path.join(
-  ASSETS_DIR,
-  "telescope.nvim-master",
-  "README.md",
-);
+const markdownPath = path.join(ASSETS_DIR, "README.md");
 
 const data = await loadAndSplitMarkdown(markdownPath);
 const vectorstore = await vectorIngestion(data);

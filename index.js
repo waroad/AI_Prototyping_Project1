@@ -1,5 +1,6 @@
 import { UnstructuredLoader } from "@langchain/community/document_loaders/fs/unstructured";
 import { OpenAIEmbeddings } from "@langchain/openai";
+import { readFileSync } from "fs";
 import axios from "axios";
 import chalk from "chalk";
 import "dotenv/config";
@@ -8,10 +9,18 @@ import { MemoryVectorStore } from "langchain/vectorstores/memory";
 import path from "path";
 
 const ASSETS_DIR = path.resolve("assets");
-const markdownPath = path.join(ASSETS_DIR, "README.md");
+const markdownPath = path.join(ASSETS_DIR, "autoscraper-master", "README.md");
+const srcPath = path.join(
+  ASSETS_DIR,
+  "autoscraper-master",
+  "autoscraper",
+  "auto_scraper.py",
+);
 
-const data = await loadAndSplitMarkdown(markdownPath);
-const vectorstore = await vectorIngestion(data);
+const markdown_data = await loadAndSplitMarkdown(markdownPath);
+const code_data = await loadAndSplitSrc(srcPath);
+const markdown_vectorstore = await vectorIngestion(markdown_data);
+const code_vectorstore = await vectorIngestion(code_data);
 
 const prompt = getPrompt([
   {
@@ -31,12 +40,26 @@ process.stdout.write("You: ");
 
 process.stdin.addListener("data", async (data) => {
   const question = data.toString().trim();
-  const contextDocs = await vectorstore.similaritySearch(`${question}`, 16);
-  const context = contextDocs.map(({ pageContent }) => pageContent).join("\n");
-  // console.log(context);
+  const docs_retrieve = await markdown_vectorstore.similaritySearch(
+    `${question}`,
+    16,
+  );
+  const code_retrieve = await code_vectorstore.similaritySearch(
+    `${question}`,
+    4,
+  );
+  // console.log(code_retrieve);
+  const contextDocs = docs_retrieve
+    .map(({ pageContent }) => pageContent)
+    .join("\n");
+  const contextCode = code_retrieve
+    .map(({ pageContent }) => pageContent)
+    .join("\n");
+  // console.log(contextDocs);
+  // console.log(contextCode);
 
   const aiResponse = await prompt(
-    `Use this context <context>${context}<context> to answer this question using the above context: ${question}`,
+    `Answer this question <question> ${question} <question> using this contextDocs <contextDocs>${contextDocs}<contextDocs> to answer it regarding the document and use contextCode <contextCode>${contextCode}<contextCode> to answer it regarding the code`,
   );
   console.log(chalk.magenta("AI: " + aiResponse.content));
   process.stdout.write("You: ");
@@ -59,6 +82,20 @@ async function loadAndSplitMarkdown(filepath) {
   });
 
   const data = await splitter.splitDocuments(README);
+  return data;
+}
+
+async function loadAndSplitSrc(filepath) {
+  const pythonfile = readFileSync(filepath, "utf-8");
+  // console.log(pythonfile);
+
+  const splitter = RecursiveCharacterTextSplitter.fromLanguage("python", {
+    chunkSize: 1024,
+    chunkOverlap: 256,
+  });
+
+  const data = await splitter.createDocuments([pythonfile]);
+  // console.log(data);
   return data;
 }
 

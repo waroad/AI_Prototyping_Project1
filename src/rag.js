@@ -3,7 +3,6 @@ import "dotenv/config";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { Document } from "langchain/document";
 import { OpenAIEmbeddingFunction, ChromaClient } from "chromadb";
-
 const code_extension = ["py"];
 
 export async function getCollection(
@@ -13,67 +12,11 @@ export async function getCollection(
 ) {
   const name = [githubOwner, githubRepo, githubBranch].join("");
   const client = new ChromaClient("http://localhost:8000");
-
   const embeddingFunction = new OpenAIEmbeddingFunction({
     model: "text-embedding-3-small",
     encoding_format: "float",
     openai_api_key: process.env.OPENAI_API_KEY,
   });
-
-  let text_collection;
-  let code_collection;
-  try {
-    text_collection = await client.getCollection({
-      name: `${name}-text`,
-      embeddingFunction,
-    });
-
-    code_collection = await client.getCollection({
-      name: `${name}-code`,
-      embeddingFunction,
-    });
-  } catch (error) {
-    const { text_document, code_document } = await loadAndSplitDocuments(
-      githubOwner,
-      githubRepo,
-      githubBranch,
-    );
-    // console.log(text_document, code_document);
-
-    if (text_document == undefined || code_document == undefined) {
-      throw new Error("not getting code or text");
-    }
-
-    text_collection = await client.createCollection({
-      metadata: { "hnsw:space": "cosine" },
-      name: `${name}-text`,
-      embeddingFunction,
-    });
-
-    code_collection = await client.createCollection({
-      metadata: { "hnsw:space": "cosine" },
-      name: `${name}-code`,
-      embeddingFunction,
-    });
-
-    await vectorIngestion(text_collection, text_document);
-    await vectorIngestion(code_collection, code_document);
-  }
-  return { text_collection, code_collection };
-}
-
-export async function loadAndSplitDocuments(
-  githubOwner,
-  githubRepo,
-  githubBranch,
-) {
-  const githubToken = process.env.GITHUB_TOKEN;
-
-  // Step 1: Get all files in the GitHub repository
-  const url = `https://api.github.com/repos/${githubOwner}/${githubRepo}/git/trees/${githubBranch}?recursive=1`;
-
-  const headers = githubToken ? { Authorization: `token ${githubToken}` } : {};
-
   try {
     const response = await axios.get(url, { headers });
     const files = response.data.tree.filter((item) => item.type === "blob");

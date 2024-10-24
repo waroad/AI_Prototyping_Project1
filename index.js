@@ -1,11 +1,10 @@
 import chalk from "chalk";
-import "dotenv/config";
 import { getPrompt } from "./src/ai.js";
 import { getCollection, retrieveText } from "./src/rag.js";
 
 const { text_collection, code_collection } = await getCollection(
-  "alirezamika",
-  "autoscraper",
+  "microsoft",
+  "CodeBERT",
   "master",
 );
 

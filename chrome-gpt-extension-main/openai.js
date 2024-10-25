@@ -1,5 +1,8 @@
 const OpenAI = require("openai");
 
+let text_collection;
+let code_collection;
+
 const prompt = getPrompt([
   {
     role: "system",
@@ -14,31 +17,24 @@ know" if you do not know`,
 ]);
 
 self.addEventListener("message", async (event) => {
+  console.log("in event");
   const data = event.data;
 
   if (data.action === "fetch_readme") {
+    console.log("fetching");
     const repoURL = data.url;
 
-    const { text_collection, code_collection } = await fetchCollection(repoURL);
-
-    if (text_collection && code_collection) {
-      // Store the README.md content in the worker for further use
-      self.text_collection = text_collection;
-      self.code_collection = code_collection;
-      self.postMessage("README.md fetched and ready to answer questions.");
-    } else {
-      self.postMessage("No README.md found or unable to fetch.");
-    }
+    // const { text_collection, code_collection } = await fetchCollection(repoURL);
+    const collection = await fetchCollection(repoURL);
+    console.log("fetched");
+    console.log(collection);
+    text_collection = collection.text_collection;
+    code_collection = collection.code_collection;
   } else if (data.action === "ask_question") {
     // User asks a question based on the already fetched README.md content
-    if (!(self.text_collection && self.code_collection)) {
-      self.postMessage("content not available.");
-      return;
-    }
-
     const responseText = await answerQuestion(
-      data.key,
-      self.readmeContent,
+      text_collection,
+      code_collection,
       data.question,
     );
     self.postMessage(responseText);
@@ -47,36 +43,19 @@ self.addEventListener("message", async (event) => {
 
 // Function to fetch README.md from a GitHub repo
 async function fetchCollection(repoURL) {
-  const match = repoURL.match(
-    /github\.com\/([^\/]+)\/([^\/]+)(?:\/(tree|blob)\/([^\/]+))?/,
-  );
-  if (!match) return null;
+  // const match = repoURL.match(
+  //   /github\.com\/([^\/]+)\/([^\/]+)(?:\/(tree|blob)\/([^\/]+))?/,
+  // );
+  // if (!match) return null;
 
-  const owner = match[1];
-  const repo = match[2];
-  const branch = match[4] || "master";
-  return await getCollection(owner, repo, branch);
+  // const owner = match[1];
+  // const repo = match[2];
+  // const branch = match[4] || "master";
+  return await getCollection("microsoft", "CodeBERT", "master");
 }
 
 // Function to answer a question based on the README.md
-async function answerQuestion(key, text_collection, code_collection, question) {
-  // const openai = new OpenAI({
-  //   apiKey: key,
-  //   dangerouslyAllowBrowser: true,
-  // });
-  //
-  // const completion = await openai.chat.completions.create({
-  //   model: "gpt-4o-mini",
-  //   messages: [
-  //     { role: "system", content: "You are a helpful assistant." },
-  //     {
-  //       role: "user",
-  //       content: `Here is the README.md content:\n\n${readmeContent}\n\nThe user has the following question: "${question}". Answer based on the README.`,
-  //     },
-  //   ],
-  // });
-  //
-  // return completion.choices[0].message.content;
+async function answerQuestion(text_collection, code_collection, question) {
   const writing_context = await retrieveText(
     text_collection,
     `${question}`,
@@ -84,7 +63,7 @@ async function answerQuestion(key, text_collection, code_collection, question) {
   );
   const coding_context = await retrieveText(code_collection, `${question}`, 4);
 
-  const aiResponse = await prompt(
+  return await prompt(
     `Answer this question <question> ${question} <question> 
     using this context
     <context> ${writing_context} <context>
@@ -96,8 +75,7 @@ async function answerQuestion(key, text_collection, code_collection, question) {
 }
 
 //ai functionality
-const axios = require("axios");
-require("dotenv").config();
+const axios = require("axios/dist/node/axios.cjs");
 
 function getPrompt(thread = []) {
   return function (userPrompt, options = {}) {
@@ -112,7 +90,7 @@ function getPrompt(thread = []) {
       url,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer OPENAI_API_KEY`,
       },
       data: {
         model: "gpt-4o-mini",
@@ -138,9 +116,9 @@ function getPrompt(thread = []) {
 }
 
 //rag functionality
-const RecursiveCharacterTextSplitter = require("langchain/text_splitter");
-const Document = require("langchain/document.js");
-const { OpenAIEmbeddingFunction, ChromaClient } = require("chromadb");
+// const RecursiveCharacterTextSplitter = require("langchain/text_splitter");
+// const Document = require("langchain/document");
+// const { OpenAIEmbeddingFunction, ChromaClient } = require("chromadb");
 
 const code_extension = ["py", "yml", "js"];
 const skip_extension = ["zip"];
@@ -157,13 +135,19 @@ async function fetchRepo(repoURL) {
 }
 
 async function getCollection(githubOwner, githubRepo, githubBranch = "main") {
+  const { ChromaClient, OpenAIEmbeddingFunction } = await import(
+    "chromadb/dist/main"
+  );
+  // const ChromaClient = await import("chromadb");
+  // const OpenAIEmbeddingFunction = await import("chromadb");
   const name = [githubOwner, githubRepo, githubBranch].join("");
   const client = new ChromaClient("http://localhost:8000");
 
   const embeddingFunction = new OpenAIEmbeddingFunction({
     model: "text-embedding-3-small",
     encoding_format: "float",
-    openai_api_key: process.env.OPENAI_API_KEY,
+    openai_api_key:
+      "OPENAI_API_KEY",
   });
 
   let text_collection;
@@ -209,6 +193,10 @@ async function getCollection(githubOwner, githubRepo, githubBranch = "main") {
 }
 
 async function loadAndSplitDocuments(githubOwner, githubRepo, githubBranch) {
+  const { Document } = await import("langchain/document");
+  const { RecursiveCharacterTextSplitter } = await import(
+    "langchain/text_splitter"
+  );
   const githubToken = process.env.GITHUB_TOKEN;
 
   // Step 1: Get all files in the GitHub repository
@@ -274,11 +262,6 @@ async function loadAndSplitDocuments(githubOwner, githubRepo, githubBranch) {
     console.error("Error fetching repository contents:", err.message);
     return { text_document: [], code_document: [] };
   }
-}
-
-function deleteCollection(name) {
-  const client = new ChromaClient("http://localhost:8000");
-  return client.deleteCollection({ name });
 }
 
 async function retrieveText(collection, question, nResults = 4) {

@@ -1,0 +1,55 @@
+body {
+  height: fit-content;
+  width: 400px;
+  background-color: #2b3137;
+}
+
+ol {
+  list-style: decimal;
+  padding-left: 2rem;
+}
+
+ul {
+  list-style: circle;
+  padding-left: 2rem;
+}
+
+li + li {
+  margin-top: 0.33em;
+}
+
+code {
+  font-family: Monaco, monospace;
+  font-size: inherit;
+}
+
+p > code,
+li > code,
+dd > code,
+td > code {
+  background: #1b1b1b;
+  word-wrap: break-word;
+  box-decoration-break: clone;
+  padding: 0.1rem 0.3rem 0.2rem;
+  border-radius: 0.2rem;
+}
+
+pre {
+  background: #1b1b1b;
+  tab-size: 2;
+  word-break: normal;
+}
+
+pre code {
+  display: block;
+  background: none;
+  white-space: pre;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: scroll;
+  max-width: 100%;
+  min-width: 100px;
+  padding: 15px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  border-radius: 0.33em;
+}

@@ -3,3 +3,6 @@ node_modules
 .env
 **/_*.js
 dist/
+
+# for removing api keys (with git-filter-repo)
+replace.txt

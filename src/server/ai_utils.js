@@ -9,6 +9,8 @@ export function getPrompt(thread = []) {
       content: userPrompt,
     };
 
+    console.log(thread);
+
     return axios({
       method: "post",
       url,
@@ -18,7 +20,7 @@ export function getPrompt(thread = []) {
       },
       data: {
         model: "gpt-4o-mini",
-        max_tokens: 500,
+        // max_tokens: 500,
         temperature: 0,
         ...options,
         messages: [...thread, promptMessage],
@@ -26,14 +28,15 @@ export function getPrompt(thread = []) {
     }).then((res) => {
       const choice = res.data.choices[0];
       if (choice.finish_reason === "stop") {
-        const thread_length = thread.reduce((a, c) => a + c.length, 0);
-        if (thread_length > 30000) {
-          thread.shift();
-        }
+        // const thread_length = thread.reduce((a, c) => a + c.length, 0);
+        // if (thread_length > 3000) {
+        //   thread.splice(1, 1);
+        // }
         thread.push(promptMessage);
         thread.push(choice.message);
         return choice.message;
       }
+      console.log(choice.finish_reason);
       throw new Error("No response from AI");
     });
   };

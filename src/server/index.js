@@ -30,7 +30,6 @@ app.post("/", (req, res) => {
 });
 
 app.post("/fetchDocs", async (req, res) => {
-  console.log(req.body);
   const { owner, repo, branch } = req.body;
   const { text_collection, code_collection } = await getCollection(
     owner,
@@ -39,13 +38,13 @@ app.post("/fetchDocs", async (req, res) => {
   );
   text_docs = text_collection;
   code_docs = code_collection;
-  res.send("complete");
+  res.sendStatus(200);
 });
 
 app.post("/askQuestion", async (req, res) => {
-  const { question } = req.body;
+  const { question, filePathRequire } = req.body;
   // console.log(text_docs, code_docs);
-  const writing_context = await retrieveText(text_docs, `${question}`, 12);
+  const writing_context = await retrieveText(text_docs, `${question}`, 4);
   const coding_context = await retrieveText(code_docs, `${question}`, 4);
   // console.log(writing_context, coding_context);
 
@@ -56,7 +55,9 @@ app.post("/askQuestion", async (req, res) => {
     to answer it in terms of general understanding
     and use this coding context
     <coding_context> ${coding_context} <coding_context>
-    to answer it when coding snippets are required.`,
+    to answer it when coding snippets are required.
+
+    please format your response in Markdown.`,
   );
   console.log(aiResponse);
   res.status(200).send(aiResponse.content);

@@ -5,7 +5,7 @@ import { Document } from "langchain/document";
 import { OpenAIEmbeddingFunction, ChromaClient } from "chromadb";
 
 const code_extension = ["py", "yml", "js"];
-const skip_extension = ["zip"];
+const skip_extension = ["zip", "jpg", "png"];
 
 export async function getCollection(
   githubOwner,
@@ -107,6 +107,8 @@ async function loadAndSplitDocuments(githubOwner, githubRepo, githubBranch) {
 
         if (code_extension.includes(type)) {
           coding_context.push(doc);
+        } else if (skip_extension.includes(type)) {
+          continue;
         } else {
           writing_context.push(doc);
         }
@@ -136,14 +138,12 @@ export async function retrieveText(collection, question, nResults = 4) {
     queryTexts: question,
     nResults,
   });
-  console.log(result.documents);
   const context = result.documents.join(" ");
   return context;
 }
 
 async function vectorIngestion(collection, docs) {
   docs.forEach(async (document, i) => {
-    console.log(document);
     await collection.add({
       ids: [`${i}`],
       documents: [

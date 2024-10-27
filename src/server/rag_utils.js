@@ -3,14 +3,16 @@ import "dotenv/config";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { Document } from "langchain/document";
 import { OpenAIEmbeddingFunction, ChromaClient } from "chromadb";
+import pLimit from "p-limit";
+import path from "path";
 
-const code_extension = ["py", "yml", "js"];
-const skip_extension = ["zip", "jpg", "png"];
+const code_extension = [".py", ".yml", ".js", ".scala"];
+const skip_extension = [".zip", ".jpg", ".png"];
 
 export async function getCollection(
   githubOwner,
   githubRepo,
-  githubBranch = "main",
+  githubBranch = "main"
 ) {
   const name = [githubOwner, githubRepo, githubBranch].join("");
   const client = new ChromaClient("http://localhost:8000");
@@ -37,7 +39,7 @@ export async function getCollection(
     const { text_document, code_document } = await loadAndSplitDocuments(
       githubOwner,
       githubRepo,
-      githubBranch,
+      githubBranch
     );
     // console.log(text_document, code_document);
 
@@ -75,47 +77,61 @@ async function loadAndSplitDocuments(githubOwner, githubRepo, githubBranch) {
     const response = await axios.get(url, { headers });
     const files = response.data.tree.filter((item) => item.type === "blob");
 
-    const writing_context = [];
-    const coding_context = [];
+    // const writing_context = [];
+    // const coding_context = [];
 
-    // Step 2: Get content of each file then create documents
-    for (const file of files) {
-      const path = file.path;
-      const type =
-        path.split(".").length >= 2
-          ? path.split(".")[path.split(".").length - 1]
-          : "other";
+    const limit = pLimit(10);
 
-      const fileUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/${path}`;
+    const filePromises = files.map(
+      (
+        file // Map files to promises
+      ) =>
+        limit(async () => {
+          // Fetch file content and process
+          const fileUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/${file.path}`;
 
-      try {
-        const fileResponse = await axios.get(fileUrl, { headers });
-        const content = fileResponse.data.content;
+          try {
+            const fileResponse = await axios.get(fileUrl, { headers });
+            const content = fileResponse.data.content;
 
-        if (!content) {
-          console.error(`No content for file ${path}`);
-          continue;
-        }
+            if (!content) {
+              console.error(`No content for file ${file.path}`);
+              return null;
+            }
 
-        const decodedContent = Buffer.from(content, "base64").toString("utf-8");
+            const decodedContent = Buffer.from(content, "base64").toString(
+              "utf-8"
+            );
 
-        // Create a document with the file content
-        const doc = new Document({
-          pageContent: decodedContent,
-          metadata: { source: file.path },
-        });
+            // Create a document with the file content
+            return new Document({
+              pageContent: decodedContent,
+              metadata: { source: file.path },
+            });
+          } catch (err) {
+            console.error(`Error fetching file ${file.path}:`, err.message);
+            return null;
+          }
+        })
+    );
 
-        if (code_extension.includes(type)) {
-          coding_context.push(doc);
-        } else if (skip_extension.includes(type)) {
-          continue;
-        } else {
-          writing_context.push(doc);
-        }
-      } catch (err) {
-        console.error(`Error fetching file ${file.path}:`, err.message);
-      }
-    }
+    const results = await Promise.all(filePromises);
+    const validDocs = results.filter((doc) => doc !== null);
+
+    const writing_context = validDocs.filter((doc) => {
+      const docPath = doc.metadata["source"];
+      const type = path.extname(docPath);
+      const result =
+        !code_extension.includes(type) && !skip_extension.includes(type);
+      return result;
+    });
+
+    const coding_context = validDocs.filter((doc) => {
+      const docPath = doc.metadata["source"];
+      const type = path.extname(docPath);
+      const result = code_extension.includes(type);
+      return result;
+    });
 
     // Step 3: Split the documents using the splitter
     const splitter = new RecursiveCharacterTextSplitter({

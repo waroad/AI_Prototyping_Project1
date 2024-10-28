@@ -5,6 +5,7 @@ import { Document } from "langchain/document";
 import { OpenAIEmbeddingFunction, ChromaClient } from "chromadb";
 import pLimit from "p-limit";
 import path from "path";
+import { getIssuesFromPastYear } from "./github_utils.js";
 
 const code_extension = [".py", ".yml", ".js", ".scala"];
 const skip_extension = [".zip", ".jpg", ".png"];
@@ -147,6 +148,60 @@ async function loadAndSplitDocuments(githubOwner, githubRepo, githubBranch) {
     console.error("Error fetching repository contents:", err.message);
     return { text_document: [], code_document: [] };
   }
+}
+
+export async function getIssueCollection(githubOwner, githubRepo) {
+  const name = [githubOwner, githubRepo].join("");
+  const client = new ChromaClient("http://localhost:8000");
+  const embeddingFunction = new OpenAIEmbeddingFunction({
+    model: "text-embedding-3-small",
+    encoding_format: "float",
+    openai_api_key: process.env.OPENAI_API_KEY,
+  });
+  let issue_collection;
+  try {
+    issue_collection = await client.getCollection({
+      name: `${name}-issue`,
+      embeddingFunction,
+    });
+  } catch (error) {
+    //splitting new issue
+    const issues = await getIssuesFromPastYear(githubOwner, githubRepo);
+    const issueDocument = issues.map((issue) => {
+      const issueContent = `
+    Issue Number: ${issue.number}
+    Title: ${issue.title}
+    State: ${issue.state}
+    Created At: ${issue.created_at}
+    Closed At: ${issue.closed_at || "N/A"}
+    Labels: ${issue.labels.map((label) => label.name).join(", ")}
+    Author: ${issue.user.login}
+    Body: ${issue.body || "No description provided."}
+    Comments: ${issue.comments}
+    URL: ${issue.html_url}`;
+
+      return new Document({
+        pageContent: issueContent,
+        metadata: { source: `issue_${issue.number}` },
+      });
+    });
+    // Split the issue documents if needed
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 2048,
+      chunkOverlap: 512,
+    });
+
+    const issue_document = await splitter.splitDocuments(issueDocument);
+
+    // make collection for the new issue collection
+    issue_collection = await client.createCollection({
+      metadata: { "hnsw:space": "cosine" },
+      name: `${name}-issue`,
+      embeddingFunction,
+    });
+    await vectorIngestion(issue_collection, issue_document);
+  }
+  return issue_collection;
 }
 
 export async function retrieveText(collection, question, nResults = 4) {

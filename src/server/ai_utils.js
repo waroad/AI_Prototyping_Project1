@@ -28,10 +28,10 @@ export function getPrompt(thread = []) {
     }).then((res) => {
       const choice = res.data.choices[0];
       if (choice.finish_reason === "stop") {
-        // const thread_length = thread.reduce((a, c) => a + c.length, 0);
-        // if (thread_length > 3000) {
-        //   thread.splice(1, 1);
-        // }
+        const thread_length = thread.reduce((a, c) => a + c.length, 0);
+        if (thread_length > 3000) {
+          thread.splice(1, 1);
+        }
         thread.push(promptMessage);
         thread.push(choice.message);
         return choice.message;

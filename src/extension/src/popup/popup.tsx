@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { MarkdownRenderer } from "../assets/markdown";
-import { gatherRepoInfoForPastYear } from "../assets/githubissue";
 import "highlight.js/styles/github.css";
 import "./popup.css";
 
@@ -42,6 +41,9 @@ const Popup = () => {
     const owner = match[1];
     const repo = match[2];
     const branch = match[4] || "main";
+    setRepo(repo);
+    setOwner(owner);
+    setBranch(branch);
     return { owner, repo, branch };
   }
 
@@ -66,6 +68,26 @@ const Popup = () => {
     }
   }
 
+  async function RepoIssueFetch(owner, repo) {
+    const options = {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json;charset=UTF-8",
+      },
+      body: JSON.stringify({
+        owner,
+        repo,
+      }),
+    };
+    const response = await fetch("http://localhost:3000/fetchIssue", options);
+    if (response.status == 200) {
+      return await response.json();
+    } else {
+      return false;
+    }
+  }
+
   function fetchDocuments() {
     chrome.tabs
       .query({ active: true, currentWindow: true })
@@ -80,8 +102,11 @@ const Popup = () => {
     chrome.tabs
       .query({ active: true, currentWindow: true })
       .then((res) => parseURL(res[0].url))
-      .then(({ owner, repo }) => gatherRepoInfoForPastYear(owner, repo))
-      .then((res) => setRepoData(res));
+      .then(({ owner, repo }) => RepoIssueFetch(owner, repo))
+      .then((res) => {
+        // console.log(res);
+        setRepoData(res);
+      });
   }
 
   function handleQuestion(event) {
@@ -155,7 +180,12 @@ const Popup = () => {
               name="questionArea"
               rows={2}
               className="block mr-2 p-2.5 w-full text-sm resize-y text-gray-900 bg-white rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-              placeholder="Your message..."
+              placeholder={
+                repo && owner && branch
+                  ? `Ask about ${repo} by ${owner} in ${branch} branch...`
+                  : "Ask about this repository..."
+                // `Ask about ${repo} by ${owner} in ${branch} branch...`
+              }
             ></textarea>
             <button
               type="submit"

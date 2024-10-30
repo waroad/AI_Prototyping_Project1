@@ -2,18 +2,28 @@ import axios from "axios";
 import "dotenv/config";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { Document } from "langchain/document";
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { OpenAIEmbeddingFunction, ChromaClient } from "chromadb";
 import pLimit from "p-limit";
 import path from "path";
 import { getIssuesFromPastYear } from "./github_utils.js";
 
-const code_extension = [".py", ".yml", ".js", ".scala"];
-const skip_extension = [".zip", ".jpg", ".png"];
+const code_extension = [
+  ".py",
+  ".js",
+  ".scala",
+  "jsx",
+  ".ts",
+  ".ipynb",
+  ".rs",
+  ".pest",
+];
+const skip_extension = [".zip", ".jpg", ".png", ".mp3", ".mp4"];
 
 export async function getCollection(
   githubOwner,
   githubRepo,
-  githubBranch = "main"
+  githubBranch = "main",
 ) {
   const name = [githubOwner, githubRepo, githubBranch].join("");
   const client = new ChromaClient("http://localhost:8000");
@@ -40,7 +50,7 @@ export async function getCollection(
     const { text_document, code_document } = await loadAndSplitDocuments(
       githubOwner,
       githubRepo,
-      githubBranch
+      githubBranch,
     );
     // console.log(text_document, code_document);
 
@@ -83,38 +93,60 @@ async function loadAndSplitDocuments(githubOwner, githubRepo, githubBranch) {
 
     const limit = pLimit(10);
 
-    const filePromises = files.map(
-      (
-        file // Map files to promises
-      ) =>
-        limit(async () => {
-          // Fetch file content and process
-          const fileUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/${file.path}`;
+    const filePromises = files
+      .filter((file) => !skip_extension.includes(path.extname(file.path)))
+      .map(
+        (
+          file, // Map files to promises
+        ) =>
+          limit(async () => {
+            // Fetch file content and process
+            const fileUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/${file.path}`;
 
-          try {
-            const fileResponse = await axios.get(fileUrl, { headers });
-            const content = fileResponse.data.content;
+            try {
+              const fileResponse = await axios.get(fileUrl, { headers });
+              const content = fileResponse.data.content;
 
-            if (!content) {
-              console.error(`No content for file ${file.path}`);
+              if (!content) {
+                console.error(`No content for file ${file.path}`);
+                return null;
+              }
+
+              let decodedContent;
+
+              if (path.extname(file.path) === ".pdf") {
+                // decode base64 string, remove space for IE compatibility
+                const binary = atob(content);
+                const len = binary.length;
+                const buffer = new ArrayBuffer(len);
+                const view = new Uint8Array(buffer);
+                for (var i = 0; i < len; i++) {
+                  view[i] = binary.charCodeAt(i);
+                }
+
+                // create the blob object with content-type "application/pdf"
+                const blob = new Blob([view], { type: "application/pdf" });
+                const loader = new PDFLoader(blob);
+                decodedContent = await loader
+                  .load()
+                  .then((res) => res.pageContent);
+              } else {
+                decodedContent = Buffer.from(content, "base64").toString(
+                  "utf-8",
+                );
+              }
+
+              // Create a document with the file content
+              return new Document({
+                pageContent: decodedContent,
+                metadata: { source: file.path },
+              });
+            } catch (err) {
+              console.error(`Error fetching file ${file.path}:`, err.message);
               return null;
             }
-
-            const decodedContent = Buffer.from(content, "base64").toString(
-              "utf-8"
-            );
-
-            // Create a document with the file content
-            return new Document({
-              pageContent: decodedContent,
-              metadata: { source: file.path },
-            });
-          } catch (err) {
-            console.error(`Error fetching file ${file.path}:`, err.message);
-            return null;
-          }
-        })
-    );
+          }),
+      );
 
     const results = await Promise.all(filePromises);
     const validDocs = results.filter((doc) => doc !== null);
@@ -136,7 +168,7 @@ async function loadAndSplitDocuments(githubOwner, githubRepo, githubBranch) {
 
     // Step 3: Split the documents using the splitter
     const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 2048,
+      chunkSize: 4096,
       chunkOverlap: 512,
     });
 
@@ -204,10 +236,11 @@ export async function getIssueCollection(githubOwner, githubRepo) {
   return issue_collection;
 }
 
-export async function retrieveText(collection, question, nResults = 4) {
+export async function retrieveText(collection, question, nResults = 4, paths) {
   const result = await collection.query({
     queryTexts: question,
     nResults,
+    where: { source: { $in: paths } },
   });
   const context = result.documents.join(" ");
   return context;

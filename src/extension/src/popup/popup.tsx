@@ -26,13 +26,11 @@ const waitingStatusDot = (
 const Popup = () => {
   const [documentStatus, setDocumentStatus] = useState(null);
   const [GPTAnswer, setGPTAnswer] = useState(null);
-  const [findRelatedFile, setFindRelatedFile] = useState(false);
   const [repo, setRepo] = useState(null);
   const [owner, setOwner] = useState(null);
   const [branch, setBranch] = useState(null);
-  const [repoData, setRepoData] = useState(null);
 
-  function parseURL(url) {
+  async function parseURL(url) {
     const match = url.match(
       /github\.com\/([^\/]+)\/([^\/]+)(?:\/(tree|blob)\/([^\/]+))?/
     );
@@ -40,7 +38,27 @@ const Popup = () => {
 
     const owner = match[1];
     const repo = match[2];
-    const branch = match[4] || "main";
+    let branch = match[4];
+
+    if (!branch) {
+      const options = {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json;charset=UTF-8",
+        },
+        body: JSON.stringify({
+          owner,
+          repo,
+        }),
+      };
+      const default_branch = await fetch(
+        "http://localhost:3000/fetchDefaultBranch",
+        options
+      ).then((res) => res.text());
+      branch = default_branch;
+    }
+
     setRepo(repo);
     setOwner(owner);
     setBranch(branch);
@@ -82,7 +100,7 @@ const Popup = () => {
     };
     const response = await fetch("http://localhost:3000/fetchIssue", options);
     if (response.status == 200) {
-      return await response.json();
+      return true;
     } else {
       return false;
     }
@@ -102,11 +120,7 @@ const Popup = () => {
     chrome.tabs
       .query({ active: true, currentWindow: true })
       .then((res) => parseURL(res[0].url))
-      .then(({ owner, repo }) => RepoIssueFetch(owner, repo))
-      .then((res) => {
-        // console.log(res);
-        setRepoData(res);
-      });
+      .then(({ owner, repo }) => RepoIssueFetch(owner, repo));
   }
 
   function handleQuestion(event) {
@@ -126,7 +140,6 @@ const Popup = () => {
       },
       body: JSON.stringify({
         question,
-        filePathRequire: findRelatedFile,
       }),
     };
     fetch("http://localhost:3000/askQuestion", options)
@@ -154,22 +167,9 @@ const Popup = () => {
           {!documentStatus && <b>waiting to fetch document...</b>}
           {documentStatus && <b>fetched documents</b>}
         </div>
-        <label className="w-fit flex items-center gap-1 cursor-pointer">
-          <span className="ms-3 font-medium text-slate-300">
-            <b>find related files</b>
-          </span>
-          <input
-            type="checkbox"
-            value=""
-            className="sr-only peer"
-            checked={findRelatedFile}
-            onClick={() => setFindRelatedFile((old) => !old)}
-          />
-          <div className="relative w-11 h-6 bg-gray-200 rounded-full peer dark:bg-gray-700 peer-focus:ring-4 peer-focus:ring-teal-300 dark:peer-focus:ring-teal-800 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-teal-600"></div>
-        </label>
       </div>
       {GPTAnswer && (
-        <div className="w-full p-3 my-2 bg-slate-700 text-slate-200 rounded-lg shadow">
+        <div className="w-full p-4 my-2 bg-slate-700 text-slate-200 rounded-lg shadow text-base">
           <MarkdownRenderer>{GPTAnswer}</MarkdownRenderer>
         </div>
       )}
@@ -179,12 +179,11 @@ const Popup = () => {
             <textarea
               name="questionArea"
               rows={2}
-              className="block mr-2 p-2.5 w-full text-sm resize-y text-gray-900 bg-white rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+              className="block mr-2 p-2.5 w-full text-base resize-y text-gray-900 bg-white rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
               placeholder={
                 repo && owner && branch
                   ? `Ask about ${repo} by ${owner} in ${branch} branch...`
                   : "Ask about this repository..."
-                // `Ask about ${repo} by ${owner} in ${branch} branch...`
               }
             ></textarea>
             <button

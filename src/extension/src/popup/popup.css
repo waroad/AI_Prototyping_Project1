@@ -53,3 +53,14 @@ pre code {
   margin-bottom: 10px;
   border-radius: 0.33em;
 }
+
+a {
+  display: inline-block;
+  padding: 2.5px 5px;
+  background-color: #db61a2;
+  font-weight: bold;
+  /* text-decoration: underline; */
+  color: inherit;
+  text-align: center;
+  border-radius: 0.33em;
+}

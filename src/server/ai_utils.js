@@ -9,8 +9,6 @@ export function getPrompt(thread = []) {
       content: userPrompt,
     };
 
-    console.log(thread);
-
     return axios({
       method: "post",
       url,
@@ -29,8 +27,8 @@ export function getPrompt(thread = []) {
       const choice = res.data.choices[0];
       if (choice.finish_reason === "stop") {
         const thread_length = thread.reduce((a, c) => a + c.length, 0);
-        if (thread_length > 3000) {
-          thread.splice(1, 1);
+        if (thread_length > 50000) {
+          thread.splice(2, 1);
         }
         thread.push(promptMessage);
         thread.push(choice.message);
